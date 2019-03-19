@@ -1,1 +1,639 @@
+import plotly.plotly as py
+import plotly.graph_objs as go
+import numpy as np
+import operator
+import re
+import math
 
+speciesCoverPath = "D:/Users/Chris/Documents/MSc Bioinformatics/RP1/CleanedData/2004to2014plotSpecies.csv"
+plotTreatmentPath = "D:/Users/Chris/Documents/MSc Bioinformatics/RP1/CleanedData/plotTreatmentsLetters.csv"
+yieldDataPath = "D:/Users/Chris/Documents/MSc Bioinformatics/RP1/CleanedData/hayYieldAllYears.csv"
+
+diversityYearList = [2004, 2006, 2008, 2010, 2012, 2014]
+
+with open(speciesCoverPath, 'r') as speciesCSV:
+    speciesCoverData = np.loadtxt(speciesCSV, dtype=str, delimiter=',')
+
+with open(plotTreatmentPath, 'r') as treatmentsCSV:
+    treatmentData = np.loadtxt(treatmentsCSV, dtype=str, delimiter=',')
+
+treatmentGroupsSingleYear = {}
+
+treatmentGroupsAllYears = {}
+
+with open(plotTreatmentPath) as f:
+    next(f)
+
+    for year in diversityYearList:
+
+        lines = f.readlines()
+
+        for element in lines:
+
+            duplicateCheck = 0
+
+            splitLine = element.split(',')
+
+            plotNumber = int(splitLine[0])
+
+            splitLine[5] = splitLine[5].rstrip()
+
+            treatmentCombo = ','.join(splitLine[1:6])
+
+            if plotNumber < 145:
+
+                if not treatmentGroupsSingleYear:
+
+                    treatmentGroupsSingleYear[treatmentCombo] = str(plotNumber)
+
+                else:
+
+                    valueToChange = ''
+
+                    for eachKey in treatmentGroupsSingleYear.keys():
+
+                        eachValue = treatmentGroupsSingleYear[eachKey]
+
+                        if re.search(treatmentCombo, str(eachKey)):
+                            keyToChange = eachKey
+
+                            valueToChange = eachValue
+
+                            duplicateCheck += 1
+
+                    if duplicateCheck == 1:
+
+                        treatmentGroupsSingleYear[keyToChange] = str(valueToChange) + ',' + str(plotNumber)
+
+                    else:
+
+                        treatmentGroupsSingleYear[treatmentCombo] = plotNumber
+
+        treatmentGroupsAllYears[year] = treatmentGroupsSingleYear
+
+with open(speciesCoverPath) as f:
+    next(f)
+
+    lines = f.readlines()
+
+    shannonIndexMeansAllYears = {}
+
+    for year in diversityYearList:
+
+        totalSpeciesCountDict = {}
+
+        shannonIndexSingleYear = {}
+
+        counter = 0
+
+        # Should probs turn this loop into a function so it can be repeated
+
+        while counter < 2:
+
+            for line in lines:
+
+                splitLine = line.split(',')
+
+                plotYear = splitLine[0]
+
+                plotNumber = splitLine[1]
+
+                splitLine[77] = splitLine[77].rstrip()
+
+                if plotYear == str(year):
+
+                    plotSpeciesCount = [int(i) for i in splitLine[2:78]]
+
+                    totalCountPerPlot = sum(plotSpeciesCount)
+
+                    # On the first iteration of this whole loop, just add the total counts per plot to
+                    # a dictionary with plot number as keys
+
+                    if counter == 0:
+
+                        totalSpeciesCountDict[plotNumber] = totalCountPerPlot
+
+                    # On the second iteration, now go through and if each species is not zero,
+                    # calculate its proportion in that plot by using the total count generated in the previous
+                    # iteration and add all of these for each plot to get SDI.
+
+                    elif counter == 1:
+
+                        plotSpeciesProportionsList = []
+
+                        for eachSpecies in plotSpeciesCount:
+
+                            if eachSpecies != 0:
+                                speciesProportion = int(eachSpecies) / totalSpeciesCountDict.get(plotNumber)
+
+                                plotSpeciesProportionsList.append((speciesProportion) * (math.log(speciesProportion)))
+
+                        shannonIndex = -1 * (sum([float(i) for i in plotSpeciesProportionsList]))
+
+                        shannonIndexSingleYear[plotNumber] = shannonIndex
+
+            counter += 1
+
+        # print(treatmentGroupsSingleYear.items())
+
+        # print(shannonIndexSingleYear)
+
+        treatmentGroupShannonDict = {}
+
+        internalPlotShannonDict = {}
+
+        for plotGroup in treatmentGroupsAllYears[year].items():
+
+            treatmentCombo = plotGroup[0]
+
+            plotCombo = plotGroup[1].split(',')
+
+            for plotSDI in shannonIndexSingleYear.items():
+
+                plotNumber = str(plotSDI[0])
+
+                individualSDI = str(plotSDI[1])
+
+                for y in range(0, 3):
+
+                    if re.search(r'^' + re.escape(plotNumber) + r'$', plotCombo[y]):
+
+                        # print('Match found at: ' + str(plotCombo[y]) + ' in the group: ' + str(plotNumber))
+
+                        if not treatmentGroupShannonDict:
+
+                            treatmentGroupShannonDict[treatmentCombo] = individualSDI
+
+                        else:
+
+                            # CHANGED THIS FROM INSIDE THE FOR LOOP BASED ON OTHER VERSIONS OF SAME CODE, HAVEN'T
+                            # CHECKED IF IT AFFECTS SHANNONDICT
+                            duplicateCounter = 0
+
+                            for eachKey in treatmentGroupShannonDict.keys():
+
+                                if re.search(treatmentCombo, eachKey):
+                                    valueToChange = treatmentGroupShannonDict[treatmentCombo]
+
+                                    keyToChange = treatmentCombo
+
+                                    duplicateCounter += 1
+
+                            if duplicateCounter == 1:
+
+                                treatmentGroupShannonDict[keyToChange] = valueToChange + ',' + individualSDI
+
+                            else:
+
+                                treatmentGroupShannonDict[treatmentCombo] = individualSDI
+
+        # print(treatmentGroupShannonDict.items())
+
+        for eachValue in treatmentGroupShannonDict.values():
+            splitValues = eachValue.split(',')
+
+        # Now to create a new dictionary of SDI means for each treatment
+
+        shannonMeanTreatmentGroups = {}
+
+        for eachItem in treatmentGroupShannonDict.items():
+
+            treatmentGroup = re.sub(',,', '', re.sub(r'0,|,0|0', '', eachItem[0]))
+
+            if treatmentGroup == '':
+                treatmentGroup = 'None'
+
+            SDIasString = eachItem[1].split(',')
+
+            SDIasFloats = map(float, SDIasString)
+
+            SDImean = sum(SDIasFloats) / 3
+
+            shannonMeanTreatmentGroups[treatmentGroup] = SDImean
+
+        # print(shannonMeanTreatmentGroups)
+
+        shannonMeanLists = sorted(shannonMeanTreatmentGroups.items(), key=operator.itemgetter(1))
+
+        # x, y = zip(*shannonMeanLists)
+
+        # print(x)
+
+        # plt.plot(x,y)
+        # plt.title(year)
+        # plt.show()
+
+        shannonIndexMeansAllYears[year] = shannonMeanLists
+
+# Now make the bar chart of SDI change between 2004 and 2014 for all treatment combos:
+SDIchange2004to2014 = {}
+
+for each2004group in shannonIndexMeansAllYears[2004]:
+
+    treatment2004 = each2004group[0]
+
+    SDI2004 = each2004group[1]
+
+    for each2014group in shannonIndexMeansAllYears[2014]:
+
+        treatment2014 = each2014group[0]
+
+        SDI2014 = each2014group[1]
+
+        if treatment2004 == treatment2014:
+            SDIchange2004to2014[treatment2014] = float(SDI2014 - SDI2004)
+
+# Graph plotting:
+# sortedChanges = sorted(SDIchange2004to2014.items(), key=operator.itemgetter(1))
+
+# x, y = zip(*sortedChanges)
+
+# x = [z for z in x]
+# y = [v for v in y]
+
+# print(x)
+
+# print(y)
+# py.plot([go.Bar(x=x,y=y,text=x)],filename='testerBar')
+
+
+# Now make the graph of mean SDI over all years with each treatment combo as a different line:
+
+lineGraphData = []
+
+for eachTreatmentSDI in shannonIndexMeansAllYears[2004]:
+
+    eachTreatmentGroup = str(eachTreatmentSDI[0])
+
+    listOfTreatments = []
+
+    listOfTreatments.append(eachTreatmentGroup)
+
+    SDIyearGroup = {}
+
+    SDIeachYear = {}
+
+    for eachYear in diversityYearList:
+
+        # print(shannonIndexMeansAllYears[eachYear])
+
+        for eachTreatSDIcombo in shannonIndexMeansAllYears[eachYear]:
+
+            annualTreatmentCombo = eachTreatSDIcombo[0]
+
+            annualSDImean = eachTreatSDIcombo[1]
+
+            if annualTreatmentCombo == eachTreatmentGroup:
+                SDIeachYear[eachYear] = annualSDImean
+
+    # print(eachTreatmentGroup)
+
+    xValues = [x for x in SDIeachYear.keys()]
+    yValues = [y for y in SDIeachYear.values()]
+
+    individualTreatmentData = go.Scatter(
+        x=xValues,
+        y=yValues,
+        mode='lines',
+        name=eachTreatmentGroup
+    )
+
+    lineGraphData.append(individualTreatmentData)
+
+figure = go.Figure(lineGraphData,
+                   go.Layout(title='Annual SDI across 48 treatments', hovermode='closest', autosize=False, width=1800,
+                             height=1000))
+
+# py.plot(figure, filename = 'Annual SDI')
+
+# Now for the yield data:
+
+yieldYearList = [2004, 2006, 2007, 2008, 2011, 2012, 2013, 2014]
+
+yieldAllYears = {}
+
+yieldInTreatmentGroups = {}
+
+with open(yieldDataPath) as f:
+    next(f)
+
+    lines = f.readlines()
+
+    for year in yieldYearList:
+
+        eachYearDict = {}
+
+        for line in lines:
+
+            individualData = line.split(',')
+
+            plotYear = individualData[0]
+
+            plotNumber = individualData[1]
+
+            plotYearYield = individualData[2].rstrip()
+
+            if str(plotYear) == str(year):
+                eachYearDict[plotNumber] = plotYearYield
+
+        yieldAllYears[year] = eachYearDict
+
+# print(yieldAllYears[2014])
+
+# Initially add all values across years for each single plot together
+allYieldValuesPerPlot = {}
+
+for year in yieldYearList:
+
+    for eachYearYield in yieldAllYears[year].items():
+
+        plotNumber = eachYearYield[0]
+
+        plotYield = eachYearYield[1]
+
+        # print(str(plotNumber) + ' | ' + str(plotYield))
+
+        if not allYieldValuesPerPlot:
+
+            allYieldValuesPerPlot[plotNumber] = plotYield
+
+        else:
+
+            duplicateCount = 0
+
+            for eachPlotNumber in allYieldValuesPerPlot.keys():
+
+                if plotNumber == eachPlotNumber:
+                    keyToChange = plotNumber
+
+                    valueToChange = allYieldValuesPerPlot.get(plotNumber)
+
+                    duplicateCount += 1
+
+            if duplicateCount == 1:
+
+                allYieldValuesPerPlot[keyToChange] = valueToChange + ',' + plotYield
+
+            else:
+
+                allYieldValuesPerPlot[plotNumber] = plotYield
+
+# print(allYieldValuesPerPlot)
+
+# Amalgamation of all yields per plot (for all five years) into treatment groups
+
+allYieldsInTreatmentGroups = {}
+
+for eachYieldCombo in allYieldValuesPerPlot.items():
+
+    eachPlot = eachYieldCombo[0]
+
+    eachYield = eachYieldCombo[1]
+
+    for plotGroup in treatmentGroupsAllYears[2004].items():
+
+        treatmentCombo = plotGroup[0]
+
+        treatmentCombo = re.sub(',,', '', re.sub(r'0,|,0|0', '', treatmentCombo))
+
+        if treatmentCombo == '':
+            treatmentCombo = 'None'
+
+        splitPlotGroup = plotGroup[1].split(',')
+
+        for y in range(0, 3):
+
+            if re.search(r'^' + re.escape(eachPlot) + r'$', splitPlotGroup[y]):
+
+                if not allYieldsInTreatmentGroups:
+
+                    allYieldsInTreatmentGroups[treatmentCombo] = eachYield
+
+                else:
+
+                    duplicateCounter = 0
+
+                    for eachKey in allYieldsInTreatmentGroups.keys():
+
+                        if re.search(r'^' + re.escape(treatmentCombo) + r'$', eachKey):
+                            valueToChange = allYieldsInTreatmentGroups[treatmentCombo]
+
+                            keyToChange = treatmentCombo
+
+                            duplicateCounter += 1
+
+                    if duplicateCounter == 1:
+
+                        allYieldsInTreatmentGroups[keyToChange] = valueToChange + ',' + eachYield
+
+                    else:
+
+                        allYieldsInTreatmentGroups[treatmentCombo] = eachYield
+
+counter = 0
+
+yieldMeanOfGroups = {}
+yieldSdOfGroups = {}
+
+# Calculate mean yields for each treatment combination
+for eachList in allYieldsInTreatmentGroups.items():
+    treatmentCombo = eachList[0]
+
+    splitLists = eachList[1].split(',')
+
+    yieldMeanOfGroups[treatmentCombo] = (sum([float(x) for x in splitLists]) / len(splitLists))
+
+standardDeviationDict = {}
+# Calculate standard deviation of yields for each treatment combination
+for eachTreatYield in allYieldsInTreatmentGroups.items():
+
+    treatmentCombo = eachTreatYield[0]
+
+    plotYields = eachTreatYield[1].split(',')
+
+    # print('First treat combo is: ' + treatmentCombo)
+
+    for eachTreatMean in yieldMeanOfGroups.items():
+
+        treatMeanYield = eachTreatMean[1]
+
+        plotTreatCombo = eachTreatMean[0]
+
+        # print('Second treat combo is: ' + plotTreatCombo)
+
+        if treatmentCombo == plotTreatCombo:
+
+            individualPlotSD = []
+
+            for eachPlotYield in plotYields:
+                # print('Match with mean ' + str(yieldMeanOfGroups.get(plotTreatCombo)) + ' and individual yield '
+                # + str(eachPlotYield))
+
+                deviationFromMean = (float(yieldMeanOfGroups.get(plotTreatCombo)) - float(eachPlotYield)) ** 2
+
+                individualPlotSD.append(deviationFromMean)
+
+                counter += 1
+
+                # print(individualPlotSD)
+
+            standardDeviationDict[treatmentCombo] = (
+                        sum([float(x) for x in individualPlotSD]) / (len(individualPlotSD) - 1))
+
+        # print(standardDeviationDict)
+
+# print(counter)
+
+# print('\nMean values are: \n')
+# print(yieldMeanOfGroups)
+
+# print('\nSD values are: \n')
+# print(standardDeviationDict)
+
+# Now to calculate the stability (mean/SD):
+
+treatmentStabilityDict = {}
+
+for eachMeanItem in yieldMeanOfGroups.items():
+
+    meanTreatmentGroup = eachMeanItem[0]
+
+    meanValue = eachMeanItem[1]
+
+    for eachSDItem in standardDeviationDict.items():
+
+        SDTreatmentGroup = eachSDItem[0]
+
+        SDValue = eachSDItem[1]
+
+        if meanTreatmentGroup == SDTreatmentGroup:
+
+            treatmentStabilityDict[meanTreatmentGroup] = meanValue / SDValue
+
+# print('\nFinal dict is: \n')
+# print(treatmentStabilityDict)
+
+
+# Now to make a graph of just the stability of each treatment group:
+
+sortedStability = sorted(treatmentStabilityDict.items(), key=operator.itemgetter(1), reverse=True)
+
+xStability, yStability = zip(*sortedStability)
+
+xValues = [x for x in xStability]
+yValues = [y for y in yStability]
+
+stabilityBarChartData = go.Bar(
+    x=xValues,
+    y=yValues,
+)
+
+figure = go.Figure([stabilityBarChartData], go.Layout(hovermode='closest', autosize=False, width=1800, height=1000))
+
+# py.plot(figure, filename = 'stabilityBarChart')
+
+# Now make a new dictionary with TreatmentGroup : [Stability, Diversity] change to get ready for big graph:
+
+stabilityDiversityTreatmentDict = {}
+
+for eachStabilityItem in treatmentStabilityDict.items():
+
+    stabilityTreatment = eachStabilityItem[0]
+
+    stabilityValue = eachStabilityItem[1]
+
+    for eachDiversityItem in SDIchange2004to2014.items():
+
+        diversityTreatment = eachDiversityItem[0]
+
+        diversityValue = eachDiversityItem[1]
+
+        if stabilityTreatment == diversityTreatment:
+            stabilityDiversityTreatmentDict[stabilityTreatment] = [diversityValue, stabilityValue]
+
+# And a repeat to make a new dictionary for the comparison of final SDI values with stability values
+
+stabilityFinalSDITreatmentDict = {}
+
+for eachStabilityItem in treatmentStabilityDict.items():
+
+    stabilityTreatment = eachStabilityItem[0]
+
+    stabilityValue = eachStabilityItem[1]
+
+    for eachfinalSDIitem in shannonIndexMeansAllYears[2014]:
+
+        finalSDITreatment = eachfinalSDIitem[0]
+
+        finalSDIValue = eachfinalSDIitem[1]
+
+        if stabilityTreatment == finalSDITreatment:
+            stabilityFinalSDITreatmentDict[stabilityTreatment] = [finalSDIValue, stabilityValue]
+
+# print(stabilityDiversityTreatmentDict)
+# Now have a dictionary of Treatment group keys and Stability, DiversityChange list values
+
+# Time to go for a graph...
+stabilityValues = []
+diversityValues = []
+xValues = []
+
+sorted_x = sorted(stabilityFinalSDITreatmentDict.items(), key=operator.itemgetter(1))
+
+# print(sorted_x)
+
+for eachItem in sorted_x:
+    # print(eachItem[1][0])
+
+    xValues.append(eachItem[0])
+
+    stabilityValues.append(eachItem[1][1])
+
+    diversityValues.append(eachItem[1][0])
+
+trace1 = go.Bar(
+    x=xValues,
+    y=stabilityValues,
+    name='Yield stability'
+)
+
+trace2 = go.Scatter(
+    x=xValues,
+    y=diversityValues,
+    name='SDI 2014',
+    yaxis='y2',
+    mode='markers',
+    marker=dict(
+        size=20,
+    )
+)
+
+data = [trace1, trace2]
+
+layout = go.Layout(barmode='group',
+                   title='Yield stability and final biodiversity after a decade for 48 treatments',
+                   yaxis=dict(
+                       title='Yield Stability',
+                       side='left',
+                       type='linear',
+                       autorange=True
+                   ),
+                   yaxis2=dict(
+                       title='SDI 2014',
+                       titlefont=dict(
+                           color='rgb(255, 128, 0)'
+                       ),
+                       tickfont=dict(
+                           color='rgb(255, 128, 0)'
+                       ),
+                       overlaying='y',
+                       side='right',
+                       type='linear',
+                       autorange=True
+                   )
+                   )
+
+fig = go.Figure(data=data, layout=layout)
+py.plot(fig, filename='finalSDIvsStability')
+
+# print(shannonIndexMeansAllYears[2014])
